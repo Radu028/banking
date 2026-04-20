@@ -1,5 +1,7 @@
 package banking.model;
 
+import java.util.Objects;
+
 public abstract class Card {
     protected String cardNumber;
     protected String accountIban;
@@ -53,6 +55,23 @@ public abstract class Card {
 
     public void setActive(boolean active) {
         this.active = active;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (!(obj instanceof Card)) {
+            return false;
+        }
+        Card other = (Card) obj;
+        return Objects.equals(cardNumber, other.cardNumber);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(cardNumber);
     }
 
     @Override

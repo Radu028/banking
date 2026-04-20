@@ -2,10 +2,13 @@ package banking;
 
 import banking.model.BankBranch;
 import banking.model.BankStatement;
+import banking.model.BankAccount;
 import banking.model.CurrentAccount;
 import banking.model.Customer;
 import banking.model.SavingsAccount;
 import banking.service.BankingService;
+
+import java.util.List;
 
 public class Main {
     public static void main(String[] args) {
@@ -70,15 +73,18 @@ public class Main {
         bankingService.applyInterestToSavingsAccount(savingsAccount.getIban());
         bankingService.blockCard("5555666677778888");
 
+        List<BankAccount> customerAccounts = bankingService.getCustomerAccounts("C001");
+        List<BankAccount> sortedAccounts = bankingService.getAllAccountsSorted();
+
         System.out.println("Conturile clientului C001:");
-        for (int i = 0; i < bankingService.getCustomerAccounts("C001").size(); i++) {
-            System.out.println(bankingService.getCustomerAccounts("C001").get(i));
+        for (int i = 0; i < customerAccounts.size(); i++) {
+            System.out.println(customerAccounts.get(i));
         }
 
         System.out.println();
         System.out.println("Conturi sortate dupa IBAN:");
-        for (int i = 0; i < bankingService.getAllAccountsSorted().size(); i++) {
-            System.out.println(bankingService.getAllAccountsSorted().get(i));
+        for (int i = 0; i < sortedAccounts.size(); i++) {
+            System.out.println(sortedAccounts.get(i));
         }
 
         System.out.println();

@@ -1,49 +1,36 @@
-# Aplicatie bancara - proiect Java
+# Banking app - Java
 
-Proiect minimal pentru tema de la facultate, construit astfel incat sa bifeze toate cerintele fara overengineering.
+## Etapa I
 
-## Etapa I - definirea sistemului
+**Actiuni:**
 
-### Actiuni / interogari disponibile in sistem
-
-1. Adaugare sucursala bancara
+1. Adaugare sucursala
 2. Inregistrare client
 3. Deschidere cont curent
-4. Deschidere cont de economii
-5. Emitere card de debit
-6. Emitere card de credit
-7. Depunere bani intr-un cont
-8. Retragere bani dintr-un cont
-9. Transfer intre doua conturi
+4. Deschidere cont economii
+5. Emitere card debit
+6. Emitere card credit
+7. Depunere
+8. Retragere
+9. Transfer intre conturi
 10. Plata cu cardul
 11. Blocare card
-12. Aplicare dobanda pentru un cont de economii
-13. Generare extras de cont
-14. Afisare conturi ale unui client
+12. Aplicare dobanda (cont economii)
+13. Extras de cont
+14. Afisare conturi client
 15. Afisare conturi sortate dupa IBAN
-16. Calcul sold total gestionat de banca
+16. Sold total banca
 
-### Tipuri de obiecte din sistem
+**Obiecte:** Customer, BankBranch, BankAccount, CurrentAccount, SavingsAccount, Card, DebitCard, CreditCard, Transaction, BankStatement
 
-1. `Customer`
-2. `BankBranch`
-3. `BankAccount`
-4. `CurrentAccount`
-5. `SavingsAccount`
-6. `Card`
-7. `DebitCard`
-8. `CreditCard`
-9. `Transaction`
-10. `BankStatement`
+## Ce acopera
 
-## Cerinte acoperite
-
-- clase cu atribute private / protected si metode de acces
-- colectii diferite: `HashMap`, `ArrayList`, `TreeSet`
-- colectie sortata: `TreeSet<BankAccount>`
-- mostenire: `BankAccount -> CurrentAccount / SavingsAccount`, `Card -> DebitCard / CreditCard`
-- clasa serviciu: `BankingService`
-- clasa de pornire: `Main`
+- atribute private/protected + getteri/setteri
+- colectii: HashMap, ArrayList, TreeSet
+- TreeSet pt sortare conturi dupa IBAN
+- mostenire (BankAccount -> CurrentAccount/SavingsAccount, Card -> DebitCard/CreditCard)
+- clasa serviciu (BankingService)
+- clasa Main
 
 ## Rulare
 

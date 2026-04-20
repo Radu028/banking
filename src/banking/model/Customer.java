@@ -1,5 +1,7 @@
 package banking.model;
 
+import java.util.Objects;
+
 public class Customer {
     private String customerId;
     private String fullName;
@@ -43,6 +45,23 @@ public class Customer {
 
     public void setPhoneNumber(String phoneNumber) {
         this.phoneNumber = phoneNumber;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (!(obj instanceof Customer)) {
+            return false;
+        }
+        Customer other = (Customer) obj;
+        return Objects.equals(customerId, other.customerId);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(customerId);
     }
 
     @Override

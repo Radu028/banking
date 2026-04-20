@@ -1,5 +1,7 @@
 package banking.model;
 
+import java.util.Objects;
+
 public class BankBranch {
     private String branchCode;
     private String city;
@@ -33,6 +35,23 @@ public class BankBranch {
 
     public void setAddress(String address) {
         this.address = address;
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (!(obj instanceof BankBranch)) {
+            return false;
+        }
+        BankBranch other = (BankBranch) obj;
+        return Objects.equals(branchCode, other.branchCode);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(branchCode);
     }
 
     @Override

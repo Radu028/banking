@@ -1,5 +1,7 @@
 package banking.model;
 
+import java.util.Objects;
+
 public abstract class BankAccount implements Comparable<BankAccount> {
     protected String iban;
     protected String ownerId;
@@ -77,6 +79,23 @@ public abstract class BankAccount implements Comparable<BankAccount> {
     @Override
     public int compareTo(BankAccount other) {
         return this.iban.compareTo(other.iban);
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) {
+            return true;
+        }
+        if (!(obj instanceof BankAccount)) {
+            return false;
+        }
+        BankAccount other = (BankAccount) obj;
+        return Objects.equals(iban, other.iban);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(iban);
     }
 
     @Override
