@@ -1,5 +1,7 @@
 package banking.service;
 
+import banking.audit.AuditService;
+import banking.config.DatabaseConnection;
 import banking.model.BankAccount;
 import banking.model.BankBranch;
 import banking.model.BankStatement;
@@ -11,36 +13,42 @@ import banking.model.DebitCard;
 import banking.model.SavingsAccount;
 import banking.model.Transaction;
 import banking.model.TransactionType;
+import banking.model.report.CardReport;
+import banking.model.report.CustomerAccountReport;
+import banking.model.report.TransactionReport;
+import banking.repository.jdbc.BankAccountRepository;
+import banking.repository.jdbc.BankBranchRepository;
+import banking.repository.jdbc.CardRepository;
+import banking.repository.jdbc.CustomerRepository;
+import banking.repository.jdbc.TransactionRepository;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.TreeSet;
+import java.util.UUID;
 
 public class BankingService {
-    private final Map<String, Customer> customers = new HashMap<String, Customer>();
-    private final Map<String, BankBranch> branches = new HashMap<String, BankBranch>();
-    private final Map<String, BankAccount> accountsByIban = new HashMap<String, BankAccount>();
-    private final Set<BankAccount> sortedAccounts = new TreeSet<BankAccount>();
-    private final Map<String, List<Card>> cardsByAccount = new HashMap<String, List<Card>>();
-    private final List<Transaction> transactions = new ArrayList<Transaction>();
-    private int transactionCounter = 1;
+    private final BankBranchRepository bankBranchRepository = new BankBranchRepository();
+    private final CustomerRepository customerRepository = new CustomerRepository();
+    private final BankAccountRepository bankAccountRepository = new BankAccountRepository();
+    private final CardRepository cardRepository = new CardRepository();
+    private final TransactionRepository transactionRepository = new TransactionRepository();
+    private final AuditService auditService = AuditService.getInstance();
+    private final DatabaseConnection databaseConnection = DatabaseConnection.getInstance();
 
-    public void addBranch(BankBranch branch) {
-        if (branches.containsKey(branch.getBranchCode())) {
-            throw new IllegalArgumentException("Sucursala exista deja.");
-        }
-        branches.put(branch.getBranchCode(), branch);
+    public void addBranch(BankBranch branch) throws SQLException {
+        bankBranchRepository.save(branch);
+        auditService.logAction("addBranch");
     }
 
-    public void addCustomer(Customer customer) {
-        if (customers.containsKey(customer.getCustomerId())) {
-            throw new IllegalArgumentException("Clientul exista deja.");
-        }
-        customers.put(customer.getCustomerId(), customer);
+    public void addCustomer(Customer customer) throws SQLException {
+        customerRepository.save(customer);
+        auditService.logAction("addCustomer");
     }
 
     public CurrentAccount openCurrentAccount(
@@ -50,12 +58,10 @@ public class BankingService {
             String currency,
             double initialBalance,
             double monthlyFee
-    ) {
-        validateNewAccount(iban, ownerId, branchCode);
-
+    ) throws SQLException {
         CurrentAccount account = new CurrentAccount(iban, ownerId, branchCode, currency, initialBalance, monthlyFee);
-        accountsByIban.put(iban, account);
-        sortedAccounts.add(account);
+        bankAccountRepository.save(account);
+        auditService.logAction("openCurrentAccount");
         return account;
     }
 
@@ -66,61 +72,109 @@ public class BankingService {
             String currency,
             double initialBalance,
             double interestRate
-    ) {
-        validateNewAccount(iban, ownerId, branchCode);
-
+    ) throws SQLException {
         SavingsAccount account = new SavingsAccount(iban, ownerId, branchCode, currency, initialBalance, interestRate);
-        accountsByIban.put(iban, account);
-        sortedAccounts.add(account);
+        bankAccountRepository.save(account);
+        auditService.logAction("openSavingsAccount");
         return account;
     }
 
-    public DebitCard issueDebitCard(String accountIban, String cardNumber, String holderName, boolean contactless) {
-        BankAccount account = getRequiredAccount(accountIban);
-        ensureCardNumberIsUnique(cardNumber);
+    public DebitCard issueDebitCard(String accountIban, String cardNumber, String holderName, boolean contactless) throws SQLException {
+        if (bankAccountRepository.findById(accountIban) == null) {
+            throw new IllegalArgumentException("Contul nu exista.");
+        }
 
-        DebitCard card = new DebitCard(cardNumber, account.getIban(), holderName, contactless);
-        addCard(card);
+        DebitCard card = new DebitCard(cardNumber, accountIban, holderName, contactless);
+        cardRepository.save(card);
+        auditService.logAction("issueDebitCard");
         return card;
     }
 
-    public CreditCard issueCreditCard(String accountIban, String cardNumber, String holderName, double creditLimit) {
-        BankAccount account = getRequiredAccount(accountIban);
-        ensureCardNumberIsUnique(cardNumber);
+    public CreditCard issueCreditCard(String accountIban, String cardNumber, String holderName, double creditLimit) throws SQLException {
+        if (bankAccountRepository.findById(accountIban) == null) {
+            throw new IllegalArgumentException("Contul nu exista.");
+        }
 
-        CreditCard card = new CreditCard(cardNumber, account.getIban(), holderName, creditLimit);
-        addCard(card);
+        CreditCard card = new CreditCard(cardNumber, accountIban, holderName, creditLimit);
+        cardRepository.save(card);
+        auditService.logAction("issueCreditCard");
         return card;
     }
 
-    public void deposit(String iban, double amount, String description) {
+    public void deposit(String iban, double amount, String description) throws SQLException {
         BankAccount account = getRequiredAccount(iban);
         account.deposit(amount);
-        recordTransaction(TransactionType.DEPOSIT, null, iban, amount, description);
+        bankAccountRepository.update(account);
+        transactionRepository.save(newTransaction(TransactionType.DEPOSIT, null, iban, amount, description));
+        auditService.logAction("deposit");
     }
 
-    public void withdraw(String iban, double amount, String description) {
+    public void withdraw(String iban, double amount, String description) throws SQLException {
         BankAccount account = getRequiredAccount(iban);
         account.withdraw(amount);
-        recordTransaction(TransactionType.WITHDRAWAL, iban, null, amount, description);
+        bankAccountRepository.update(account);
+        transactionRepository.save(newTransaction(TransactionType.WITHDRAWAL, iban, null, amount, description));
+        auditService.logAction("withdraw");
     }
 
-    public void transfer(String sourceIban, String destinationIban, double amount, String description) {
+    public void transfer(String sourceIban, String destinationIban, double amount, String description) throws SQLException {
+        String balanceSql = "SELECT balance FROM accounts WHERE iban = ?";
+        String updateSql = "UPDATE accounts SET balance = ? WHERE iban = ?";
+        String insertTransactionSql = "INSERT INTO transactions(transaction_id, type, source_iban, destination_iban, amount, description, timestamp) "
+                + "VALUES (?, ?, ?, ?, ?, ?, ?)";
+
         if (sourceIban.equals(destinationIban)) {
             throw new IllegalArgumentException("Transferul trebuie facut intre conturi diferite.");
         }
 
-        BankAccount sourceAccount = getRequiredAccount(sourceIban);
-        BankAccount destinationAccount = getRequiredAccount(destinationIban);
+        try (Connection connection = databaseConnection.getConnection()) {
+            connection.setAutoCommit(false);
 
-        sourceAccount.withdraw(amount);
-        destinationAccount.deposit(amount);
-        recordTransaction(TransactionType.TRANSFER, sourceIban, destinationIban, amount, description);
+            try {
+                double sourceBalance = getBalance(connection, balanceSql, sourceIban);
+                double destinationBalance = getBalance(connection, balanceSql, destinationIban);
+
+                if (amount <= 0) {
+                    throw new IllegalArgumentException("Suma trebuie sa fie pozitiva.");
+                }
+                if (sourceBalance < amount) {
+                    throw new IllegalArgumentException("Fonduri insuficiente.");
+                }
+
+                try (PreparedStatement updateStatement = connection.prepareStatement(updateSql)) {
+                    updateStatement.setDouble(1, sourceBalance - amount);
+                    updateStatement.setString(2, sourceIban);
+                    updateStatement.executeUpdate();
+
+                    updateStatement.setDouble(1, destinationBalance + amount);
+                    updateStatement.setString(2, destinationIban);
+                    updateStatement.executeUpdate();
+                }
+
+                try (PreparedStatement transactionStatement = connection.prepareStatement(insertTransactionSql)) {
+                    transactionStatement.setString(1, UUID.randomUUID().toString());
+                    transactionStatement.setString(2, TransactionType.TRANSFER.name());
+                    transactionStatement.setString(3, sourceIban);
+                    transactionStatement.setString(4, destinationIban);
+                    transactionStatement.setDouble(5, amount);
+                    transactionStatement.setString(6, description);
+                    transactionStatement.setString(7, LocalDateTime.now().toString());
+                    transactionStatement.executeUpdate();
+                }
+
+                connection.commit();
+                auditService.logAction("transfer");
+            } catch (Exception exception) {
+                connection.rollback();
+                throw exception;
+            } finally {
+                connection.setAutoCommit(true);
+            }
+        }
     }
 
-    public void payWithCard(String cardNumber, double amount, String description) {
-        Card card = findCardByNumber(cardNumber);
-
+    public void payWithCard(String cardNumber, double amount, String description) throws SQLException {
+        Card card = cardRepository.findById(cardNumber);
         if (card == null) {
             throw new IllegalArgumentException("Cardul nu exista.");
         }
@@ -130,67 +184,61 @@ public class BankingService {
 
         BankAccount account = getRequiredAccount(card.getAccountIban());
         account.withdraw(amount);
-        recordTransaction(TransactionType.CARD_PAYMENT, account.getIban(), null, amount, description);
+        bankAccountRepository.update(account);
+        transactionRepository.save(newTransaction(TransactionType.CARD_PAYMENT, account.getIban(), null, amount, description));
+        auditService.logAction("payWithCard");
     }
 
-    public void blockCard(String cardNumber) {
-        Card card = findCardByNumber(cardNumber);
-
+    public void blockCard(String cardNumber) throws SQLException {
+        Card card = cardRepository.findById(cardNumber);
         if (card == null) {
             throw new IllegalArgumentException("Cardul nu exista.");
         }
 
         card.block();
+        cardRepository.update(card);
+        auditService.logAction("blockCard");
     }
 
-    public void applyInterestToSavingsAccount(String iban) {
+    public void applyInterestToSavingsAccount(String iban) throws SQLException {
         BankAccount account = getRequiredAccount(iban);
-
         if (!(account instanceof SavingsAccount)) {
-            throw new IllegalArgumentException("Dobanda se aplica doar pentru conturile de economii.");
+            throw new IllegalArgumentException("Dobanda se aplica doar pe cont de economii.");
         }
 
         SavingsAccount savingsAccount = (SavingsAccount) account;
         double interestAmount = savingsAccount.getBalance() * savingsAccount.getInterestRate() / 100.0;
         savingsAccount.deposit(interestAmount);
-        recordTransaction(TransactionType.DEPOSIT, null, iban, interestAmount, "Aplicare dobanda");
+        bankAccountRepository.update(savingsAccount);
+        transactionRepository.save(newTransaction(TransactionType.DEPOSIT, null, iban, interestAmount, "Aplicare dobanda"));
+        auditService.logAction("applyInterestToSavingsAccount");
     }
 
-    public List<BankAccount> getCustomerAccounts(String customerId) {
-        List<BankAccount> result = new ArrayList<BankAccount>();
-
-        for (BankAccount account : sortedAccounts) {
-            if (account.getOwnerId().equals(customerId)) {
-                result.add(account);
-            }
-        }
-
-        return result;
-    }
-
-    public List<BankAccount> getAllAccountsSorted() {
+    public List<BankAccount> getCustomerAccounts(String customerId) throws SQLException {
+        TreeSet<BankAccount> sortedAccounts = new TreeSet<BankAccount>(bankAccountRepository.findByOwnerId(customerId));
+        auditService.logAction("getCustomerAccounts");
         return new ArrayList<BankAccount>(sortedAccounts);
     }
 
-    public List<Transaction> getTransactionsForAccount(String iban) {
-        List<Transaction> result = new ArrayList<Transaction>();
-
-        for (Transaction transaction : transactions) {
-            if (iban.equals(transaction.getSourceIban()) || iban.equals(transaction.getDestinationIban())) {
-                result.add(transaction);
-            }
-        }
-
-        return result;
+    public List<BankAccount> getAllAccountsSorted() throws SQLException {
+        TreeSet<BankAccount> sortedAccounts = new TreeSet<BankAccount>(bankAccountRepository.findAll());
+        auditService.logAction("getAllAccountsSorted");
+        return new ArrayList<BankAccount>(sortedAccounts);
     }
 
-    public BankStatement generateStatement(String iban) {
+    public List<Transaction> getTransactionsForAccount(String iban) throws SQLException {
+        auditService.logAction("getTransactionsForAccount");
+        return transactionRepository.findByAccountIban(iban);
+    }
+
+    public BankStatement generateStatement(String iban) throws SQLException {
         BankAccount account = getRequiredAccount(iban);
-        List<Transaction> accountTransactions = getTransactionsForAccount(iban);
+        List<Transaction> accountTransactions = transactionRepository.findByAccountIban(iban);
         double closingBalance = account.getBalance();
         double netChange = 0.0;
 
-        for (Transaction transaction : accountTransactions) {
+        for (int i = 0; i < accountTransactions.size(); i++) {
+            Transaction transaction = accountTransactions.get(i);
             if (iban.equals(transaction.getDestinationIban())) {
                 netChange += transaction.getAmount();
             }
@@ -199,87 +247,120 @@ public class BankingService {
             }
         }
 
-        double openingBalance = closingBalance - netChange;
-
-        return new BankStatement(
-                iban,
-                LocalDateTime.now(),
-                accountTransactions,
-                openingBalance,
-                closingBalance
-        );
+        auditService.logAction("generateStatement");
+        return new BankStatement(iban, LocalDateTime.now(), accountTransactions, closingBalance - netChange, closingBalance);
     }
 
-    public double getTotalBankBalance() {
+    public double getTotalBankBalance() throws SQLException {
         double total = 0.0;
+        List<BankAccount> accounts = bankAccountRepository.findAll();
 
-        for (BankAccount account : sortedAccounts) {
-            total += account.getBalance();
+        for (int i = 0; i < accounts.size(); i++) {
+            total += accounts.get(i).getBalance();
         }
 
+        auditService.logAction("getTotalBankBalance");
         return total;
     }
 
-    private void validateNewAccount(String iban, String ownerId, String branchCode) {
-        if (accountsByIban.containsKey(iban)) {
-            throw new IllegalArgumentException("Contul exista deja.");
-        }
-        if (!customers.containsKey(ownerId)) {
-            throw new IllegalArgumentException("Clientul nu exista.");
-        }
-        if (!branches.containsKey(branchCode)) {
-            throw new IllegalArgumentException("Sucursala nu exista.");
-        }
-    }
+    public List<CustomerAccountReport> getCustomerAccountReports() throws SQLException {
+        String sql = "SELECT c.full_name, a.iban, a.account_type, b.city, a.balance "
+                + "FROM customers c "
+                + "JOIN accounts a ON c.customer_id = a.owner_id "
+                + "JOIN branches b ON a.branch_code = b.branch_code "
+                + "ORDER BY c.full_name, a.iban";
+        List<CustomerAccountReport> reports = new ArrayList<CustomerAccountReport>();
 
-    private BankAccount getRequiredAccount(String iban) {
-        BankAccount account = accountsByIban.get(iban);
-
-        if (account == null) {
-            throw new IllegalArgumentException("Contul nu exista.");
-        }
-
-        return account;
-    }
-
-    private void addCard(Card card) {
-        List<Card> cards = cardsByAccount.get(card.getAccountIban());
-
-        if (cards == null) {
-            cards = new ArrayList<Card>();
-            cardsByAccount.put(card.getAccountIban(), cards);
-        }
-
-        cards.add(card);
-    }
-
-    private void ensureCardNumberIsUnique(String cardNumber) {
-        if (findCardByNumber(cardNumber) != null) {
-            throw new IllegalArgumentException("Numarul de card exista deja.");
-        }
-    }
-
-    private Card findCardByNumber(String cardNumber) {
-        for (List<Card> cards : cardsByAccount.values()) {
-            for (Card card : cards) {
-                if (card.getCardNumber().equals(cardNumber)) {
-                    return card;
-                }
+        try (Connection connection = databaseConnection.getConnection();
+             PreparedStatement preparedStatement = connection.prepareStatement(sql);
+             ResultSet resultSet = preparedStatement.executeQuery()) {
+            while (resultSet.next()) {
+                reports.add(new CustomerAccountReport(
+                        resultSet.getString("full_name"),
+                        resultSet.getString("iban"),
+                        resultSet.getString("account_type"),
+                        resultSet.getString("city"),
+                        resultSet.getDouble("balance")
+                ));
             }
         }
 
-        return null;
+        auditService.logAction("getCustomerAccountReports");
+        return reports;
     }
 
-    private void recordTransaction(
+    public List<CardReport> getCardReports() throws SQLException {
+        String sql = "SELECT cd.card_number, cd.card_type, c.full_name, a.iban, cd.active "
+                + "FROM cards cd "
+                + "JOIN accounts a ON cd.account_iban = a.iban "
+                + "JOIN customers c ON a.owner_id = c.customer_id "
+                + "ORDER BY cd.card_number";
+        List<CardReport> reports = new ArrayList<CardReport>();
+
+        try (Connection connection = databaseConnection.getConnection();
+             PreparedStatement preparedStatement = connection.prepareStatement(sql);
+             ResultSet resultSet = preparedStatement.executeQuery()) {
+            while (resultSet.next()) {
+                reports.add(new CardReport(
+                        resultSet.getString("card_number"),
+                        resultSet.getString("card_type"),
+                        resultSet.getString("full_name"),
+                        resultSet.getString("iban"),
+                        resultSet.getInt("active") == 1
+                ));
+            }
+        }
+
+        auditService.logAction("getCardReports");
+        return reports;
+    }
+
+    public List<TransactionReport> getTransactionReports() throws SQLException {
+        String sql = "SELECT t.transaction_id, t.type, COALESCE(sc.full_name, '-') AS source_owner, "
+                + "COALESCE(dc.full_name, '-') AS destination_owner, t.amount "
+                + "FROM transactions t "
+                + "LEFT JOIN accounts sa ON t.source_iban = sa.iban "
+                + "LEFT JOIN customers sc ON sa.owner_id = sc.customer_id "
+                + "LEFT JOIN accounts da ON t.destination_iban = da.iban "
+                + "LEFT JOIN customers dc ON da.owner_id = dc.customer_id "
+                + "ORDER BY t.timestamp";
+        List<TransactionReport> reports = new ArrayList<TransactionReport>();
+
+        try (Connection connection = databaseConnection.getConnection();
+             PreparedStatement preparedStatement = connection.prepareStatement(sql);
+             ResultSet resultSet = preparedStatement.executeQuery()) {
+            while (resultSet.next()) {
+                reports.add(new TransactionReport(
+                        resultSet.getString("transaction_id"),
+                        resultSet.getString("type"),
+                        resultSet.getString("source_owner"),
+                        resultSet.getString("destination_owner"),
+                        resultSet.getDouble("amount")
+                ));
+            }
+        }
+
+        auditService.logAction("getTransactionReports");
+        return reports;
+    }
+
+    private BankAccount getRequiredAccount(String iban) throws SQLException {
+        BankAccount account = bankAccountRepository.findById(iban);
+        if (account == null) {
+            throw new IllegalArgumentException("Contul nu exista.");
+        }
+        return account;
+    }
+
+    private Transaction newTransaction(
             TransactionType type,
             String sourceIban,
             String destinationIban,
             double amount,
             String description
     ) {
-        Transaction transaction = new Transaction(
-                "T" + transactionCounter,
+        return new Transaction(
+                UUID.randomUUID().toString(),
                 type,
                 sourceIban,
                 destinationIban,
@@ -287,8 +368,19 @@ public class BankingService {
                 description,
                 LocalDateTime.now()
         );
+    }
 
-        transactionCounter++;
-        transactions.add(transaction);
+    private double getBalance(Connection connection, String balanceSql, String iban) throws SQLException {
+        try (PreparedStatement preparedStatement = connection.prepareStatement(balanceSql)) {
+            preparedStatement.setString(1, iban);
+
+            try (ResultSet resultSet = preparedStatement.executeQuery()) {
+                if (resultSet.next()) {
+                    return resultSet.getDouble("balance");
+                }
+            }
+        }
+
+        throw new IllegalArgumentException("Contul " + iban + " nu exista.");
     }
 }

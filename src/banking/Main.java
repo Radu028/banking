@@ -1,17 +1,22 @@
 package banking;
 
+import banking.config.DatabaseInitializer;
 import banking.model.BankBranch;
-import banking.model.BankStatement;
 import banking.model.BankAccount;
+import banking.model.BankStatement;
 import banking.model.CurrentAccount;
 import banking.model.Customer;
 import banking.model.SavingsAccount;
+import banking.model.report.CardReport;
+import banking.model.report.CustomerAccountReport;
+import banking.model.report.TransactionReport;
 import banking.service.BankingService;
 
 import java.util.List;
 
 public class Main {
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
+        DatabaseInitializer.initializeSchema();
         BankingService bankingService = new BankingService();
 
         bankingService.addBranch(new BankBranch("B001", "Bucuresti", "Bd. Unirii 10"));
@@ -75,6 +80,9 @@ public class Main {
 
         List<BankAccount> customerAccounts = bankingService.getCustomerAccounts("C001");
         List<BankAccount> sortedAccounts = bankingService.getAllAccountsSorted();
+        List<CustomerAccountReport> customerAccountReports = bankingService.getCustomerAccountReports();
+        List<CardReport> cardReports = bankingService.getCardReports();
+        List<TransactionReport> transactionReports = bankingService.getTransactionReports();
 
         System.out.println("Conturile clientului C001:");
         for (int i = 0; i < customerAccounts.size(); i++) {
@@ -90,6 +98,23 @@ public class Main {
         System.out.println();
         BankStatement statement = bankingService.generateStatement("RO49BANK0000000000000001");
         System.out.println(statement);
+
+        System.out.println("Raport JOIN clienti-conturi-sucursale:");
+        for (int i = 0; i < customerAccountReports.size(); i++) {
+            System.out.println(customerAccountReports.get(i));
+        }
+
+        System.out.println();
+        System.out.println("Raport JOIN carduri-conturi-clienti:");
+        for (int i = 0; i < cardReports.size(); i++) {
+            System.out.println(cardReports.get(i));
+        }
+
+        System.out.println();
+        System.out.println("Raport JOIN tranzactii-conturi-clienti:");
+        for (int i = 0; i < transactionReports.size(); i++) {
+            System.out.println(transactionReports.get(i));
+        }
 
         System.out.println();
         System.out.println("Sold total in sistem: " + bankingService.getTotalBankBalance() + " RON");

@@ -26,15 +26,51 @@
 ## Ce acopera
 
 - atribute private/protected + getteri/setteri
-- colectii: HashMap, ArrayList, TreeSet
-- TreeSet pt sortare conturi dupa IBAN
+- colectii: ArrayList, TreeSet
+- TreeSet pentru sortare conturi dupa IBAN
 - mostenire (BankAccount -> CurrentAccount/SavingsAccount, Card -> DebitCard/CreditCard)
 - clasa serviciu (BankingService)
 - clasa Main
 
+## Etapa II
+
+- `schema.sql` complet cu PK si mai multe FK
+- `db.properties`
+- `DatabaseConnection` singleton
+- interfata generica `Repository<T, ID>`
+- CRUD complet pentru `BankBranch`, `Customer`, `BankAccount`, `Card`, `Transaction`
+- toate SQL-urile folosesc `PreparedStatement`
+- toate operatiile JDBC folosesc `try-with-resources`
+- tranzactie JDBC explicita cu `commit/rollback` in `transfer`
+- 3 interogari SQL cu `JOIN`
+- `AuditService` CSV thread-safe
+
+### 10 actiuni principale auditate
+
+1. `addBranch`
+2. `addCustomer`
+3. `openCurrentAccount`
+4. `openSavingsAccount`
+5. `issueDebitCard`
+6. `issueCreditCard`
+7. `deposit`
+8. `withdraw`
+9. `transfer`
+10. `payWithCard`
+
+In plus, proiectul mai auditeaza si alte operatii utile: `blockCard`, `applyInterestToSavingsAccount`, `getCustomerAccounts`, `getAllAccountsSorted`, `generateStatement`, `getTotalBankBalance` si rapoartele cu `JOIN`.
+
+### Ce poti arata rapid la prezentare
+
+1. Initializarea bazei de date din `schema.sql`
+2. Repository generic + implementari JDBC
+3. Tranzactia explicita din metoda `transfer`
+4. `audit.csv` generat automat
+5. Cele 3 rapoarte SQL cu `JOIN`
+
 ## Rulare
 
 ```bash
-javac -d out $(find src -name "*.java")
-java -cp out banking.Main
+javac -cp "lib/*" -d out $(find src -name "*.java")
+java -cp "out:lib/*" banking.Main
 ```
