@@ -1,76 +1,53 @@
-# Banking app - Java
+# Banking System
 
-## Etapa I
+A Java banking application built around a relational data model, JDBC repositories, explicit transactions, and an audit trail.
 
-**Actiuni:**
+The project models branches, customers, current and savings accounts, debit and credit cards, and account transactions. It started as an object-oriented programming assignment and was extended with persistent storage and reporting.
 
-1. Adaugare sucursala
-2. Inregistrare client
-3. Deschidere cont curent
-4. Deschidere cont economii
-5. Emitere card debit
-6. Emitere card credit
-7. Depunere
-8. Retragere
-9. Transfer intre conturi
-10. Plata cu cardul
-11. Blocare card
-12. Aplicare dobanda (cont economii)
-13. Extras de cont
-14. Afisare conturi client
-15. Afisare conturi sortate dupa IBAN
-16. Sold total banca
+## Highlights
 
-**Obiecte:** Customer, BankBranch, BankAccount, CurrentAccount, SavingsAccount, Card, DebitCard, CreditCard, Transaction, BankStatement
+- Generic `Repository<T, ID>` interface with JDBC implementations for each aggregate.
+- Explicit `commit` / `rollback` handling for transfers between accounts.
+- Prepared statements and try-with-resources across database operations.
+- Current and savings accounts with fees and interest behavior.
+- Debit and credit card issuance, card payments, and blocking.
+- Thread-safe CSV audit logging for service operations.
+- Three SQL reports joining customers, accounts, branches, cards, and transactions.
 
-## Ce acopera
+## Architecture
 
-- atribute private/protected + getteri/setteri
-- colectii: ArrayList, TreeSet
-- TreeSet pentru sortare conturi dupa IBAN
-- mostenire (BankAccount -> CurrentAccount/SavingsAccount, Card -> DebitCard/CreditCard)
-- clasa serviciu (BankingService)
-- clasa Main
+```text
+src/banking/
+├── model/          domain objects and report projections
+├── repository/     generic repository contract and JDBC implementations
+├── service/        banking workflows and transaction boundaries
+├── audit/          CSV audit trail
+├── config/         database connection and schema initialization
+└── Main.java       executable demonstration
+```
 
-## Etapa II
+SQLite is used locally, with the schema defined in [`schema.sql`](schema.sql). The application recreates the schema and seeds a small demonstration dataset on startup.
 
-- `schema.sql` complet cu PK si mai multe FK
-- `db.properties`
-- `DatabaseConnection` singleton
-- interfata generica `Repository<T, ID>`
-- CRUD complet pentru `BankBranch`, `Customer`, `BankAccount`, `Card`, `Transaction`
-- toate SQL-urile folosesc `PreparedStatement`
-- toate operatiile JDBC folosesc `try-with-resources`
-- tranzactie JDBC explicita cu `commit/rollback` in `transfer`
-- 3 interogari SQL cu `JOIN`
-- `AuditService` CSV thread-safe
+## Run locally
 
-### 10 actiuni principale auditate
-
-1. `addBranch`
-2. `addCustomer`
-3. `openCurrentAccount`
-4. `openSavingsAccount`
-5. `issueDebitCard`
-6. `issueCreditCard`
-7. `deposit`
-8. `withdraw`
-9. `transfer`
-10. `payWithCard`
-
-In plus, proiectul mai auditeaza si alte operatii utile: `blockCard`, `applyInterestToSavingsAccount`, `getCustomerAccounts`, `getAllAccountsSorted`, `generateStatement`, `getTotalBankBalance` si rapoartele cu `JOIN`.
-
-### Ce poti arata rapid la prezentare
-
-1. Initializarea bazei de date din `schema.sql`
-2. Repository generic + implementari JDBC
-3. Tranzactia explicita din metoda `transfer`
-4. `audit.csv` generat automat
-5. Cele 3 rapoarte SQL cu `JOIN`
-
-## Rulare
+Requirements: Java 11 or newer.
 
 ```bash
 javac -cp "lib/*" -d out $(find src -name "*.java")
 java -cp "out:lib/*" banking.Main
 ```
+
+Running the application creates:
+
+- `banking.db` — the local SQLite database;
+- `audit.csv` — the service-operation audit trail.
+
+Both files are generated locally and intentionally excluded from version control.
+
+## Example workflows
+
+The executable demonstration creates customers and accounts, issues cards, performs deposits, withdrawals, transfers and card payments, applies savings interest, blocks a card, and prints account statements and joined reports.
+
+## Course context
+
+University of Bucharest — *Advanced Object-Oriented Programming in Java*.
